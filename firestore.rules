@@ -1,0 +1,119 @@
+rules_version = '2';
+
+// ------------------------------------------------------------------
+// Regras de segurança do Firestore - Sistema de Controle de Presença
+//
+// Princípios:
+//  - Cada mediador só acessa os próprios dados (mediadorId == uid).
+//  - O administrador principal acessa tudo.
+//  - A tela de evasão exige permissão individual (evasaoPermitida).
+//  - O aluno (sem login) só consegue LER uma chamada ABERTA (para
+//    saber o nome da turma) e REGISTRAR a própria presença.
+//  - Presença só é aceita em chamada ABERTA, uma única vez por aluno
+//    (o ID do documento é o próprio alunoId dentro de
+//    chamadas/{token}/presencas), e sempre com o horário do servidor.
+// ------------------------------------------------------------------
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function meuPerfil() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return signedIn() && meuPerfil().role == 'admin';
+    }
+
+    function isAtivo() {
+      return signedIn() && meuPerfil().ativo == true;
+    }
+
+    // Administrador OU mediador com permissão individual de evasão.
+    function podeVerEvasao() {
+      return signedIn() && (
+        meuPerfil().role == 'admin' || meuPerfil().evasaoPermitida == true
+      );
+    }
+
+    function ehDonoOuAdmin(dados) {
+      return isAdmin() || (signedIn() && dados.mediadorId == request.auth.uid);
+    }
+
+    function chamadaDo(token) {
+      return get(/databases/$(database)/documents/chamadas/$(token)).data;
+    }
+
+    function presencaValida(token, alunoId) {
+      let d = request.resource.data;
+      let c = chamadaDo(token);
+      return alunoId == d.alunoId
+             && c.status == 'aberta'
+             && d.confirmadoEm == request.time
+             && alunoId in c.alunoIds;
+    }
+
+    // ---------------- usuários / mediadores ----------------
+    match /users/{uid} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      // Apenas o administrador cria/atualiza/remove contas de mediadores.
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ---------------- turmas ----------------
+    match /turmas/{id} {
+      allow read: if isAtivo() && ehDonoOuAdmin(resource.data);
+      allow create: if isAtivo() && request.resource.data.mediadorId == request.auth.uid;
+      allow update: if isAtivo() && ehDonoOuAdmin(resource.data)
+                    && request.resource.data.mediadorId == resource.data.mediadorId;
+      allow delete: if isAtivo() && ehDonoOuAdmin(resource.data);
+    }
+
+    // ---------------- alunos ----------------
+    match /alunos/{id} {
+      allow read: if isAtivo() && ehDonoOuAdmin(resource.data);
+      allow create: if isAtivo() && request.resource.data.mediadorId == request.auth.uid;
+      allow update: if isAtivo() && ehDonoOuAdmin(resource.data)
+                    && request.resource.data.mediadorId == resource.data.mediadorId;
+      allow delete: if isAtivo() && ehDonoOuAdmin(resource.data);
+    }
+
+    // ---------------- chamadas ----------------
+    // O ID do documento da chamada é o próprio token aleatório do link.
+    // Por isso o aluno consegue lê-la por leitura direta, sem consulta.
+    match /chamadas/{token} {
+      // Aluno sem login: só lê enquanto a chamada estiver ABERTA.
+      allow get: if resource.data.status == 'aberta'
+                 || (isAtivo() && ehDonoOuAdmin(resource.data));
+      allow list: if isAtivo() && ehDonoOuAdmin(resource.data);
+      allow create: if isAtivo() && request.resource.data.mediadorId == request.auth.uid;
+      allow update: if isAtivo() && ehDonoOuAdmin(resource.data);
+      allow delete: if isAdmin();
+
+      // ------------- presenças (subcoleção da chamada) -------------
+      // O aluno não faz login: a criação é pública, mas só é aceita se
+      // a chamada estiver aberta, se ele estiver na lista e se o horário
+      // vier do servidor. O ID é o alunoId, garantindo presença única.
+      match /presencas/{alunoId} {
+        allow read: if isAtivo()
+                    && (isAdmin() || chamadaDo(token).mediadorId == request.auth.uid);
+        allow create: if presencaValida(token, alunoId);
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // ---------------- monitoramento de evasão (dados derivados) ----------------
+    // Protegido por regra: quem não tem permissão não lê,
+    // independentemente da interface.
+    match /evasao/{alunoId} {
+      allow read: if podeVerEvasao()
+                  && resource.data.mediadorId == request.auth.uid;
+      allow create, update: if isAtivo()
+                  && request.resource.data.mediadorId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+  }
+}
