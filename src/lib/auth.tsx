@@ -42,7 +42,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const snap = await getDoc(doc(db, "users", u.uid));
       setPerfil(snap.exists() ? ({ uid: u.uid, ...snap.data() } as Perfil) : null);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("ERRO ao carregar perfil:", err);
       setPerfil(null);
     }
   }, []);
