@@ -32,6 +32,34 @@ service cloud.firestore {
       return signedIn() && meuPerfil().ativo == true;
     }
 
+    function provedorAutoCadastroValido() {
+      return request.auth.token.firebase.sign_in_provider == 'google.com'
+             || request.auth.token.firebase.sign_in_provider == 'password';
+    }
+
+    function autoCadastroMediadorValido(uid) {
+      let d = request.resource.data;
+      return signedIn()
+             && request.auth.uid == uid
+             && !exists(/databases/$(database)/documents/users/$(uid))
+             && provedorAutoCadastroValido()
+             && d.keys().hasOnly([
+                  'nome',
+                  'email',
+                  'role',
+                  'ativo',
+                  'evasaoPermitida',
+                  'criadoEm'
+                ])
+             && d.nome is string
+             && d.nome.size() > 0
+             && d.email == request.auth.token.email
+             && d.role == 'mediador'
+             && d.ativo == true
+             && d.evasaoPermitida == false
+             && d.criadoEm == request.time;
+    }
+
     // Administrador OU mediador com permissão individual de evasão.
     function podeVerEvasao() {
       return signedIn() && (
@@ -59,8 +87,10 @@ service cloud.firestore {
     // ---------------- usuários / mediadores ----------------
     match /users/{uid} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
-      // Apenas o administrador cria/atualiza/remove contas de mediadores.
-      allow create, update, delete: if isAdmin();
+      // O mediador pode se auto cadastrar apenas no primeiro acesso,
+      // sempre como role = mediador, via Google ou email/senha.
+      allow create: if isAdmin() || autoCadastroMediadorValido(uid);
+      allow update, delete: if isAdmin();
     }
 
     // ---------------- turmas ----------------
@@ -109,8 +139,9 @@ service cloud.firestore {
     // Protegido por regra: quem não tem permissão não lê,
     // independentemente da interface.
     match /evasao/{alunoId} {
-      allow read: if podeVerEvasao()
-                  && resource.data.mediadorId == request.auth.uid;
+      allow read: if isAdmin()
+                  || (podeVerEvasao()
+                  && resource.data.mediadorId == request.auth.uid);
       allow create, update: if isAtivo()
                   && request.resource.data.mediadorId == request.auth.uid;
       allow delete: if isAdmin();

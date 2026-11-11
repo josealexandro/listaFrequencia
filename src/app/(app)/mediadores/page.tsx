@@ -7,13 +7,10 @@ import {
   getCountFromServer,
   getDocs,
   query,
-  serverTimestamp,
-  setDoc,
   updateDoc,
   where,
 } from "firebase/firestore";
-import { createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
-import { appSecundario, db } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth";
 import type { Perfil } from "@/lib/tipos";
 
@@ -24,14 +21,14 @@ interface Atividade {
 }
 
 export default function MediadoresPage() {
-  const { perfil } = useAuth();
+  const { perfil, user } = useAuth();
   const [mediadores, setMediadores] = useState<Perfil[]>([]);
-  const [form, setForm] = useState({ nome: "", email: "", senha: "" });
-  const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
   const [atividade, setAtividade] = useState<Record<string, Atividade>>({});
   const [carregando, setCarregando] = useState(true);
+  const [removendoUid, setRemovendoUid] = useState<string | null>(null);
+  const [mostrarArquivados, setMostrarArquivados] = useState(false);
 
   const administrador = perfil?.role === "admin";
 
@@ -51,73 +48,39 @@ export default function MediadoresPage() {
     carregar();
   }, [carregar]);
 
-  async function cadastrar(e: React.FormEvent) {
-    e.preventDefault();
-    setErro("");
-    setAviso("");
-    const nome = form.nome.trim();
-    const email = form.email.trim().toLowerCase();
-
-    if (!nome) return setErro("Informe o nome do mediador.");
-    if (!email) return setErro("Informe o e-mail do mediador.");
-    if (form.senha.length < 6)
-      return setErro("A senha deve ter pelo menos 6 caracteres.");
-    if (mediadores.some((m) => m.email.toLowerCase() === email))
-      return setErro("Já existe um mediador com este e-mail.");
-
-    setSalvando(true);
-    try {
-      // App secundário: cria a conta sem encerrar a sessão do administrador.
-      const authSec = getAuth(appSecundario());
-      const cred = await createUserWithEmailAndPassword(authSec, email, form.senha);
-      const uid = cred.user.uid;
-      await signOut(authSec);
-
-      await setDoc(doc(db, "users", uid), {
-        nome,
-        email,
-        role: "mediador",
-        ativo: true,
-        evasaoPermitida: false,
-        criadoEm: serverTimestamp(),
-      });
-
-      setForm({ nome: "", email: "", senha: "" });
-      setAviso(`Mediador ${nome} cadastrado com sucesso.`);
-      await carregar();
-    } catch (err: unknown) {
-      const codigo = (err as { code?: string })?.code ?? "";
-      if (codigo === "auth/email-already-in-use") {
-        setErro("Este e-mail já está em uso no sistema de autenticação.");
-      } else if (codigo === "auth/invalid-email") {
-        setErro("E-mail inválido.");
-      } else if (codigo === "auth/weak-password") {
-        setErro("Senha muito fraca. Use pelo menos 6 caracteres.");
-      } else {
-        setErro("Não foi possível cadastrar o mediador. Verifique os dados.");
-      }
-    } finally {
-      setSalvando(false);
-    }
-  }
+  const mediadoresAtivos = mediadores.filter((m) => !m.deletado);
+  const mediadoresArquivados = mediadores.filter((m) => m.deletado);
+  const mediadoresVisiveis = mostrarArquivados ? mediadoresArquivados : mediadoresAtivos;
 
   async function alternarAtivo(m: Perfil) {
+    setErro("");
+    setAviso("");
     try {
       await updateDoc(doc(db, "users", m.uid), { ativo: !m.ativo });
+      setAviso(
+        `Conta de ${m.nome} ${m.ativo ? "desativada" : "ativada"} com sucesso.`,
+      );
       await carregar();
     } catch {
-      setErro("Não foi possível alterar a situação do mediador.");
+      setErro("Nao foi possivel alterar a situacao do mediador.");
     }
   }
 
   async function alternarEvasao(m: Perfil) {
+    setErro("");
+    setAviso("");
     try {
       await updateDoc(doc(db, "users", m.uid), {
         evasaoPermitida: !m.evasaoPermitida,
       });
+      setAviso(
+        `Permissao de evasao de ${m.nome} ${
+          m.evasaoPermitida ? "retirada" : "liberada"
+        } com sucesso.`,
+      );
       await carregar();
     } catch {
-      setErro("Não foi possível alterar a permissão de evasão.");
+      setErro("Nao foi possivel alterar a permissao de evasao.");
     }
   }
 
@@ -151,7 +114,67 @@ export default function MediadoresPage() {
         },
       }));
     } catch {
-      setErro("Não foi possível carregar as atividades deste mediador.");
+      setErro("Nao foi possivel carregar as atividades deste mediador.");
+    }
+  }
+
+  async function atualizarArquivamento(
+    m: Perfil,
+    action: "archive" | "restore",
+  ) {
+    if (!user) return;
+
+    const confirmado = window.confirm(
+      action === "archive"
+        ? `Arquivar ${m.nome}? A conta saira da lista principal e perdera o acesso.`
+        : `Restaurar ${m.nome}? A conta voltara para a lista principal e podera acessar o sistema.`,
+    );
+    if (!confirmado) return;
+
+    setErro("");
+    setAviso("");
+    setRemovendoUid(m.uid);
+
+    try {
+      const token = await user.getIdToken();
+      const resp = await fetch(`/api/admin/mediadores/${m.uid}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action }),
+      });
+
+      const body = (await resp.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+      };
+
+      if (!resp.ok) {
+        throw new Error(body.error || "Nao foi possivel atualizar o mediador.");
+      }
+
+      setAviso(
+        body.message ||
+          `Mediador ${m.nome} ${
+            action === "archive" ? "arquivado" : "restaurado"
+          } com sucesso.`,
+      );
+      setAtividade((prev) => {
+        const copia = { ...prev };
+        delete copia[m.uid];
+        return copia;
+      });
+      await carregar();
+    } catch (err: unknown) {
+      setErro(
+        err instanceof Error
+          ? err.message
+          : "Nao foi possivel atualizar o mediador.",
+      );
+    } finally {
+      setRemovendoUid(null);
     }
   }
 
@@ -173,43 +196,22 @@ export default function MediadoresPage() {
           Gerenciamento de mediadores
         </h1>
         <p className="text-sm text-slate-500">
-          Cadastre contas, ative/desative acessos e libere individualmente o
-          monitoramento de evasão.
+          Mediadores criam a propria conta por Google ou e-mail. Aqui voce controla
+          ativacao, permissao de evasao e arquivamento de acesso.
         </p>
       </div>
 
-      <form onSubmit={cadastrar} className="card">
-        <h2 className="mb-4 font-semibold text-slate-800">Novo mediador</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div>
-            <label className="label">Nome</label>
-            <input
-              className="input"
-              value={form.nome}
-              onChange={(e) => setForm({ ...form, nome: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="label">E-mail</label>
-            <input
-              type="email"
-              className="input"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="label">Senha inicial</label>
-            <input
-              type="text"
-              className="input"
-              value={form.senha}
-              onChange={(e) => setForm({ ...form, senha: e.target.value })}
-              placeholder="mínimo 6 caracteres"
-            />
-          </div>
-        </div>
-
+      <div className="card">
+        <h2 className="mb-2 font-semibold text-slate-800">Novo fluxo</h2>
+        <p className="text-sm text-slate-600">
+          O mediador entra em <strong>/login</strong> e cria a conta com Google
+          ou e-mail e senha. No primeiro acesso, o perfil dele e
+          criado automaticamente como mediador.
+        </p>
+        <p className="mt-2 text-xs text-slate-500">
+          Ao arquivar, o mediador perde o acesso e some da lista principal,
+          mas o historico permanece preservado.
+        </p>
         {erro && (
           <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
             {erro}
@@ -220,20 +222,23 @@ export default function MediadoresPage() {
             {aviso}
           </p>
         )}
-
-        <button type="submit" className="btn-primario mt-4" disabled={salvando}>
-          {salvando ? "Cadastrando..." : "Cadastrar mediador"}
-        </button>
-        <p className="mt-2 text-xs text-slate-500">
-          Informe a senha inicial ao mediador. Ele poderá usá-la para entrar no
-          sistema.
-        </p>
-      </form>
+      </div>
 
       <div className="card">
-        <h2 className="mb-3 font-semibold text-slate-800">
-          Mediadores ({mediadores.length})
-        </h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-semibold text-slate-800">
+            {mostrarArquivados
+              ? `Mediadores arquivados (${mediadoresArquivados.length})`
+              : `Mediadores ativos (${mediadoresAtivos.length})`}
+          </h2>
+          <button
+            type="button"
+            className="btn-secundario"
+            onClick={() => setMostrarArquivados((v) => !v)}
+          >
+            {mostrarArquivados ? "Mostrar ativos" : "Mostrar arquivados"}
+          </button>
+        </div>
         <div className="overflow-x-auto">
           <table className="tabela">
             <thead>
@@ -246,7 +251,7 @@ export default function MediadoresPage() {
               </tr>
             </thead>
             <tbody>
-              {mediadores.map((m) => (
+              {mediadoresVisiveis.map((m) => (
                 <tr key={m.uid}>
                   <td className="font-medium">{m.nome}</td>
                   <td>{m.email}</td>
@@ -254,12 +259,14 @@ export default function MediadoresPage() {
                     <span
                       className={
                         "badge " +
-                        (m.ativo
+                        (m.deletado
+                          ? "bg-amber-50 text-amber-800"
+                          : m.ativo
                           ? "bg-emerald-50 text-emerald-700"
                           : "bg-slate-100 text-slate-500")
                       }
                     >
-                      {m.ativo ? "Ativo" : "Desativado"}
+                      {m.deletado ? "Arquivado" : m.ativo ? "Ativo" : "Desativado"}
                     </span>
                   </td>
                   <td>
@@ -275,31 +282,56 @@ export default function MediadoresPage() {
                     </span>
                   </td>
                   <td className="text-right whitespace-nowrap">
-                    <button
-                      className="text-sm font-semibold text-marca-600"
-                      onClick={() => alternarAtivo(m)}
-                    >
-                      {m.ativo ? "Desativar" : "Ativar"}
-                    </button>
-                    <button
-                      className="ml-3 text-sm font-semibold text-marca-600"
-                      onClick={() => alternarEvasao(m)}
-                    >
-                      {m.evasaoPermitida ? "Retirar evasão" : "Liberar evasão"}
-                    </button>
+                    {!m.deletado && (
+                      <button
+                        className="text-sm font-semibold text-marca-600"
+                        onClick={() => alternarAtivo(m)}
+                        disabled={removendoUid === m.uid}
+                      >
+                        {m.ativo ? "Desativar" : "Ativar"}
+                      </button>
+                    )}
+                    {!m.deletado && (
+                      <button
+                        className="ml-3 text-sm font-semibold text-marca-600"
+                        onClick={() => alternarEvasao(m)}
+                        disabled={removendoUid === m.uid}
+                      >
+                        {m.evasaoPermitida ? "Retirar evasao" : "Liberar evasao"}
+                      </button>
+                    )}
                     <button
                       className="ml-3 text-sm font-semibold text-slate-600"
                       onClick={() => verAtividade(m)}
+                      disabled={removendoUid === m.uid}
                     >
                       Atividades
+                    </button>
+                    <button
+                      className={
+                        "ml-3 text-sm font-semibold " +
+                        (m.deletado ? "text-emerald-600" : "text-red-600")
+                      }
+                      onClick={() =>
+                        atualizarArquivamento(m, m.deletado ? "restore" : "archive")
+                      }
+                      disabled={removendoUid === m.uid}
+                    >
+                      {removendoUid === m.uid
+                        ? "Salvando..."
+                        : m.deletado
+                          ? "Restaurar"
+                          : "Arquivar"}
                     </button>
                   </td>
                 </tr>
               ))}
-              {!carregando && mediadores.length === 0 && (
+              {!carregando && mediadoresVisiveis.length === 0 && (
                 <tr>
                   <td colSpan={5} className="text-center text-slate-400">
-                    Nenhum mediador cadastrado.
+                    {mostrarArquivados
+                      ? "Nenhum mediador arquivado."
+                      : "Nenhum mediador ativo."}
                   </td>
                 </tr>
               )}

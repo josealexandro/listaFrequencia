@@ -10,14 +10,14 @@ export default function AreaRestritaLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { carregando, user, perfil, sair } = useAuth();
+  const { carregando, carregandoPerfil, user, perfil, sair } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!carregando && !user) router.replace("/login");
   }, [carregando, user, router]);
 
-  if (carregando) {
+  if (carregando || (user && carregandoPerfil)) {
     return (
       <div className="flex min-h-screen items-center justify-center text-slate-400">
         Carregando...

@@ -9,6 +9,9 @@ export interface Perfil {
   role: Papel;
   ativo: boolean;
   evasaoPermitida: boolean;
+  deletado?: boolean;
+  deletadoEm?: Timestamp | null;
+  deletadoPor?: string;
   criadoEm?: Timestamp | null;
 }
 

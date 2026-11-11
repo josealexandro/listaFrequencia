@@ -13,8 +13,16 @@ import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import type { Perfil } from "./tipos";
 
+const ESPERA_PERFIL_MS = 250;
+const MAX_TENTATIVAS_PERFIL = 8;
+
+function aguardar(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 interface ContextoAuth {
   carregando: boolean;
+  carregandoPerfil: boolean;
   user: User | null;
   perfil: Perfil | null;
   recarregarPerfil: () => Promise<void>;
@@ -23,6 +31,7 @@ interface ContextoAuth {
 
 const Ctx = createContext<ContextoAuth>({
   carregando: true,
+  carregandoPerfil: true,
   user: null,
   perfil: null,
   recarregarPerfil: async () => {},
@@ -31,19 +40,41 @@ const Ctx = createContext<ContextoAuth>({
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [carregando, setCarregando] = useState(true);
+  const [carregandoPerfil, setCarregandoPerfil] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [perfil, setPerfil] = useState<Perfil | null>(null);
 
   const carregarPerfil = useCallback(async (u: User | null) => {
+    setCarregandoPerfil(true);
+
     if (!u) {
       setPerfil(null);
+      setCarregandoPerfil(false);
       return;
     }
+
     try {
-      const snap = await getDoc(doc(db, "users", u.uid));
-      setPerfil(snap.exists() ? ({ uid: u.uid, ...snap.data() } as Perfil) : null);
+      let tentativas = 0;
+
+      while (tentativas < MAX_TENTATIVAS_PERFIL) {
+        const snap = await getDoc(doc(db, "users", u.uid));
+
+        if (snap.exists()) {
+          setPerfil({ uid: u.uid, ...snap.data() } as Perfil);
+          return;
+        }
+
+        tentativas += 1;
+        if (tentativas < MAX_TENTATIVAS_PERFIL) {
+          await aguardar(ESPERA_PERFIL_MS);
+        }
+      }
+
+      setPerfil(null);
     } catch {
       setPerfil(null);
+    } finally {
+      setCarregandoPerfil(false);
     }
   }, []);
 
@@ -64,7 +95,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <Ctx.Provider value={{ carregando, user, perfil, recarregarPerfil, sair }}>
+    <Ctx.Provider
+      value={{
+        carregando,
+        carregandoPerfil,
+        user,
+        perfil,
+        recarregarPerfil,
+        sair,
+      }}
+    >
       {children}
     </Ctx.Provider>
   );
