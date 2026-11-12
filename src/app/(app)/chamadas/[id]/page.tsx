@@ -197,7 +197,7 @@ export default function AcompanharChamadaPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-800">{chamada.turmaNome}</h1>
           <p className="text-sm text-slate-500">
@@ -210,7 +210,7 @@ export default function AcompanharChamadaPage() {
         </div>
         <span
           className={
-            "badge " +
+            "badge w-fit " +
             (aberta
               ? "bg-emerald-50 text-emerald-700"
               : chamada.status === "cancelada"
@@ -261,7 +261,7 @@ export default function AcompanharChamadaPage() {
               <img
                 src={qr}
                 alt="QR Code da chamada"
-                className="h-40 w-40 rounded-lg border border-slate-200 bg-white p-1"
+                className="mx-auto h-40 w-40 rounded-lg border border-slate-200 bg-white p-1 sm:mx-0"
               />
             )}
             <div className="flex-1 space-y-3">
@@ -269,12 +269,12 @@ export default function AcompanharChamadaPage() {
                 <label className="label">Link da chamada</label>
                 <input className="input" readOnly value={link} />
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button className="btn-secundario" onClick={copiarLink}>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <button className="btn-secundario w-full sm:w-auto" onClick={copiarLink}>
                   {copiado ? "Copiado!" : "Copiar link"}
                 </button>
                 <a
-                  className="btn-secundario"
+                  className="btn-secundario w-full sm:w-auto"
                   href={link}
                   target="_blank"
                   rel="noreferrer"
@@ -371,13 +371,13 @@ export default function AcompanharChamadaPage() {
             </button>
           </>
         ) : (
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-slate-600">
               {chamada.status === "cancelada"
                 ? "Chamada cancelada. Ela não é contabilizada no monitoramento de evasão."
                 : "Chamada encerrada. O PDF pode ser baixado novamente a qualquer momento."}
             </p>
-            <button className="btn-primario" onClick={baixarPdfNovamente}>
+            <button className="btn-primario w-full sm:w-auto" onClick={baixarPdfNovamente}>
               Baixar PDF
             </button>
           </div>

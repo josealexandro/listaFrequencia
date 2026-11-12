@@ -225,7 +225,7 @@ export default function MediadoresPage() {
       </div>
 
       <div className="card">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="font-semibold text-slate-800">
             {mostrarArquivados
               ? `Mediadores arquivados (${mediadoresArquivados.length})`
@@ -233,7 +233,7 @@ export default function MediadoresPage() {
           </h2>
           <button
             type="button"
-            className="btn-secundario"
+            className="btn-secundario w-full sm:w-auto"
             onClick={() => setMostrarArquivados((v) => !v)}
           >
             {mostrarArquivados ? "Mostrar ativos" : "Mostrar arquivados"}
@@ -281,48 +281,50 @@ export default function MediadoresPage() {
                       {m.evasaoPermitida ? "Liberado" : "Não liberado"}
                     </span>
                   </td>
-                  <td className="text-right whitespace-nowrap">
-                    {!m.deletado && (
+                  <td className="text-right">
+                    <div className="flex min-w-[180px] flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+                      {!m.deletado && (
+                        <button
+                          className="text-sm font-semibold text-marca-600"
+                          onClick={() => alternarAtivo(m)}
+                          disabled={removendoUid === m.uid}
+                        >
+                          {m.ativo ? "Desativar" : "Ativar"}
+                        </button>
+                      )}
+                      {!m.deletado && (
+                        <button
+                          className="text-sm font-semibold text-marca-600"
+                          onClick={() => alternarEvasao(m)}
+                          disabled={removendoUid === m.uid}
+                        >
+                          {m.evasaoPermitida ? "Retirar evasao" : "Liberar evasao"}
+                        </button>
+                      )}
                       <button
-                        className="text-sm font-semibold text-marca-600"
-                        onClick={() => alternarAtivo(m)}
+                        className="text-sm font-semibold text-slate-600"
+                        onClick={() => verAtividade(m)}
                         disabled={removendoUid === m.uid}
                       >
-                        {m.ativo ? "Desativar" : "Ativar"}
+                        Atividades
                       </button>
-                    )}
-                    {!m.deletado && (
                       <button
-                        className="ml-3 text-sm font-semibold text-marca-600"
-                        onClick={() => alternarEvasao(m)}
+                        className={
+                          "text-sm font-semibold " +
+                          (m.deletado ? "text-emerald-600" : "text-red-600")
+                        }
+                        onClick={() =>
+                          atualizarArquivamento(m, m.deletado ? "restore" : "archive")
+                        }
                         disabled={removendoUid === m.uid}
                       >
-                        {m.evasaoPermitida ? "Retirar evasao" : "Liberar evasao"}
+                        {removendoUid === m.uid
+                          ? "Salvando..."
+                          : m.deletado
+                            ? "Restaurar"
+                            : "Arquivar"}
                       </button>
-                    )}
-                    <button
-                      className="ml-3 text-sm font-semibold text-slate-600"
-                      onClick={() => verAtividade(m)}
-                      disabled={removendoUid === m.uid}
-                    >
-                      Atividades
-                    </button>
-                    <button
-                      className={
-                        "ml-3 text-sm font-semibold " +
-                        (m.deletado ? "text-emerald-600" : "text-red-600")
-                      }
-                      onClick={() =>
-                        atualizarArquivamento(m, m.deletado ? "restore" : "archive")
-                      }
-                      disabled={removendoUid === m.uid}
-                    >
-                      {removendoUid === m.uid
-                        ? "Salvando..."
-                        : m.deletado
-                          ? "Restaurar"
-                          : "Arquivar"}
-                    </button>
+                    </div>
                   </td>
                 </tr>
               ))}

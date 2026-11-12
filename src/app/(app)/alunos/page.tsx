@@ -240,14 +240,18 @@ export default function AlunosPage() {
           </p>
         )}
 
-        <div className="mt-4 flex gap-2">
-          <button type="submit" className="btn-primario" disabled={salvando}>
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+          <button
+            type="submit"
+            className="btn-primario w-full sm:w-auto"
+            disabled={salvando}
+          >
             {salvando ? "Salvando..." : form.id ? "Salvar alterações" : "Cadastrar aluno"}
           </button>
           {form.id && (
             <button
               type="button"
-              className="btn-secundario"
+              className="btn-secundario w-full sm:w-auto"
               onClick={() => setForm({ ...vazio, dataEntrada: hojeYMD() })}
             >
               Cancelar edição
@@ -257,12 +261,12 @@ export default function AlunosPage() {
       </form>
 
       <div className="card">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="font-semibold text-slate-800">
             Alunos cadastrados ({visiveis.length})
           </h2>
           <select
-            className="input max-w-xs"
+            className="input w-full sm:max-w-xs"
             value={filtroTurma}
             onChange={(e) => setFiltroTurma(e.target.value)}
           >
@@ -305,28 +309,30 @@ export default function AlunosPage() {
                       {a.situacao === "ativo" ? "Ativo" : "Inativo"}
                     </span>
                   </td>
-                  <td className="text-right whitespace-nowrap">
-                    <button
-                      className="text-sm font-semibold text-marca-600"
-                      onClick={() =>
-                        setForm({
-                          id: a.id,
-                          nome: a.nome,
-                          matricula: a.matricula ?? "",
-                          turmaId: a.turmaId,
-                          dataEntrada: a.dataEntrada,
-                          situacao: a.situacao,
-                        })
-                      }
-                    >
-                      Editar
-                    </button>
-                    <button
-                      className="ml-3 text-sm font-semibold text-red-600"
-                      onClick={() => remover(a)}
-                    >
-                      Excluir
-                    </button>
+                  <td className="text-right">
+                    <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:justify-end">
+                      <button
+                        className="text-sm font-semibold text-marca-600"
+                        onClick={() =>
+                          setForm({
+                            id: a.id,
+                            nome: a.nome,
+                            matricula: a.matricula ?? "",
+                            turmaId: a.turmaId,
+                            dataEntrada: a.dataEntrada,
+                            situacao: a.situacao,
+                          })
+                        }
+                      >
+                        Editar
+                      </button>
+                      <button
+                        className="text-sm font-semibold text-red-600"
+                        onClick={() => remover(a)}
+                      >
+                        Excluir
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
