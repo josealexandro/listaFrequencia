@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   addDoc,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -34,6 +35,7 @@ export default function AlunosPage() {
   const [form, setForm] = useState({ ...vazio, dataEntrada: hojeYMD() });
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
+  const [mensagem, setMensagem] = useState("");
 
   const carregar = useCallback(async () => {
     if (!perfil) return;
@@ -67,6 +69,7 @@ export default function AlunosPage() {
     e.preventDefault();
     if (!perfil) return;
     setErro("");
+    setMensagem("");
     if (!form.nome.trim()) return setErro("Informe o nome completo do aluno.");
     if (!form.turmaId) return setErro("Selecione a turma do aluno.");
     if (!form.dataEntrada) return setErro("Informe a data de entrada na turma.");
@@ -94,11 +97,45 @@ export default function AlunosPage() {
       };
       if (form.id) {
         await updateDoc(doc(db, "alunos", form.id), dados);
+        setMensagem("Aluno atualizado com sucesso.");
       } else {
-        await addDoc(collection(db, "alunos"), {
+        const alunoRef = await addDoc(collection(db, "alunos"), {
           ...dados,
           criadoEm: serverTimestamp(),
         });
+
+        const podeEntrarNaChamada =
+          dados.situacao === "ativo" &&
+          (!dados.dataEntrada || dados.dataEntrada <= hojeYMD());
+
+        if (podeEntrarNaChamada) {
+          const chamadasAbertas = await getDocs(
+            query(
+              collection(db, "chamadas"),
+              where("mediadorId", "==", perfil.uid),
+              where("turmaId", "==", dados.turmaId),
+              where("status", "==", "aberta"),
+            ),
+          );
+
+          const chamadaAberta = chamadasAbertas.docs[0];
+          if (chamadaAberta) {
+            await updateDoc(doc(db, "chamadas", chamadaAberta.id), {
+              alunos: arrayUnion({
+                id: alunoRef.id,
+                nome: dados.nome,
+                matricula: dados.matricula,
+              }),
+              alunoIds: arrayUnion(alunoRef.id),
+              totalAlunos: (chamadaAberta.data().totalAlunos ?? 0) + 1,
+            });
+            setMensagem("Aluno cadastrado e incluído na chamada aberta da turma.");
+          } else {
+            setMensagem("Aluno cadastrado com sucesso.");
+          }
+        } else {
+          setMensagem("Aluno cadastrado com sucesso.");
+        }
       }
       setForm({ ...vazio, dataEntrada: hojeYMD(), turmaId: form.turmaId });
       await carregar();
@@ -195,6 +232,11 @@ export default function AlunosPage() {
         {erro && (
           <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
             {erro}
+          </p>
+        )}
+        {mensagem && (
+          <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+            {mensagem}
           </p>
         )}
 
